@@ -5,6 +5,7 @@
 #include "DebuggerTypes.h"
 
 class Debugger;
+class CPU;
 
 enum class CallbackType
 {
@@ -74,4 +75,6 @@ public:
 	virtual void UnregisterMemoryCallback(CallbackType type, int startAddr, int endAddr, int reference);
 	void RegisterEventCallback(EventType type, int reference);
 	virtual void UnregisterEventCallback(EventType type, int reference);
+protected:
+	CPU* GetCPU();
 };

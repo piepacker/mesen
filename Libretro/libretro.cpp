@@ -1222,6 +1222,59 @@ protected:
 	{
 		return 0;
 	}
+
+public:
+	uint64_t GetRegister(unsigned reg)
+	{
+		State state;
+		GetCPU()->GetState(state);
+		switch (reg)
+		{
+		case HC_6502_A:
+			return state.A;
+		case HC_6502_X:
+			return state.X;
+		case HC_6502_Y:
+			return state.Y;
+		case HC_6502_S:
+			return state.SP;
+		case HC_6502_PC:
+			return state.PC;
+		case HC_6502_P:
+			return state.PS;
+		default:
+			return 0;
+		}
+	}
+	
+	void SetRegister(unsigned reg, uint64_t value)
+	{
+		State state;
+		CPU* cpu = GetCPU();
+		cpu->GetState(state);
+		switch (reg)
+		{
+		case HC_6502_A:
+			state.A = value;
+			break;
+		case HC_6502_X:
+			state.X =value;
+			break;
+		case HC_6502_Y:
+			state.Y = value;
+			break;
+		case HC_6502_S:
+			state.SP = value;
+			break;
+		case HC_6502_PC:
+			cpu->SetDebugPC(value);
+			return;
+		case HC_6502_P:
+			state.PS = value;
+			break;
+		}
+		cpu->SetState(state);
+	}
 };
 
 static HCDebugContext& get_scripting_context()
@@ -1295,17 +1348,27 @@ static hc_Cpu const cpu = {
 	"Main CPU", HC_CPU_6502, 1,
 	/* memory_region */
 	&main_memory,
-	/* get_register, set_register, set_reg_breakpoint */
-	nullptr, nullptr, nullptr,
+	/* get_register */
+	[](void* ud, unsigned reg) -> uint64_t {
+		return get_scripting_context().GetRegister(reg);
+	},
+	/* set_register */
+	[](void* ud, unsigned reg, uint64_t value) -> void {
+		get_scripting_context().SetRegister(reg, value);
+	},
+	/* set_reg_breakpoint */
+	nullptr,
 	/* step_into, step_over, step_out */
 	nullptr, nullptr, nullptr,
-	/* set_exec_breakpoint, set_io_watchpoint, set_int_breakpoint */
+	/* set_exec_breakpoint */
 	[](void* ud, uint64_t address) -> unsigned {
 		HCDebugContext& context = get_scripting_context();
 		unsigned _breakpoint_id = breakpoint_id++;
 		context.RegisterMemoryCallback(CallbackType::CpuExec, address, address + 1, _breakpoint_id);
 		return _breakpoint_id;
-	}, nullptr, nullptr,
+	},
+	/* set_io_watchpoint, set_int_breakpoint */
+	nullptr, nullptr,
 	/* break_points, num_break_points */
 	nullptr, 0
 };

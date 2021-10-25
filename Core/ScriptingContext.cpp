@@ -238,3 +238,8 @@ void ScriptingContext::ClearSavestateData(int slot)
 		_saveSlotData.erase(slot);
 	}
 }
+
+CPU* ScriptingContext::GetCPU()
+{
+	return _debugger->_cpu.get();
+}
