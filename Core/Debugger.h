@@ -33,6 +33,7 @@ class ExpressionEvaluator;
 class DummyCpu;
 class EventManager;
 struct ExpressionData;
+class ScriptingContext;
 
 enum EvalResultType : int32_t;
 enum class CdlStripFlag;
@@ -72,6 +73,9 @@ private:
 	SimpleLock _scriptLock;
 	int _nextScriptId;
 	vector<shared_ptr<ScriptHost>> _scripts;
+	int _memory_watched[0x10000]; // stores number of times memory address is watched.
+	int _event_watched[(int)EventType::EventTypeSize]; // same, but for events.
+	
 	
 	atomic<int32_t> _preventResume;
 	atomic<bool> _stopFlag;
@@ -264,10 +268,18 @@ public:
 	int32_t FindSubEntryPoint(uint16_t relativeAddress);
 	
 	void SetInputOverride(uint8_t port, uint32_t state);
-
+	
+	int32_t AttachScript(shared_ptr<ScriptingContext>);
 	int32_t LoadScript(string name, string content, int32_t scriptId);
 	void RemoveScript(int32_t scriptId);
 	const char* GetScriptLog(int32_t scriptId);
+	
+	// scripts use these to mark some memory addresses as being watched.
+	// This is important for efficiency reasons.
+	void WatchMemory(uint16_t addr);
+	void UnwatchMemory(uint16_t addr);
+	void WatchEvent(EventType type);
+	void UnwatchEvent(EventType type);
 
 	void ResetCounters();
 

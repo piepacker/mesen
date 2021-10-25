@@ -1479,7 +1479,7 @@ void Console::DebugProcessPpuCycle()
 
 void Console::DebugProcessEvent(EventType type)
 {
-#ifndef LIBRETRO
+#ifndef NO_DEBUGGER
 	if(_debugger) {
 		_debugger->ProcessEvent(type);
 	}
@@ -1488,7 +1488,7 @@ void Console::DebugProcessEvent(EventType type)
 
 void Console::DebugProcessInterrupt(uint16_t cpuAddr, uint16_t destCpuAddr, bool forNmi)
 {
-#ifndef LIBRETRO
+#ifndef NO_DEBUGGER
 	if(_debugger) {
 		_debugger->ProcessInterrupt(cpuAddr, destCpuAddr, forNmi);
 	}
@@ -1506,7 +1506,7 @@ void Console::DebugSetLastFramePpuScroll(uint16_t addr, uint8_t xScroll, bool up
 
 void Console::DebugAddDebugEvent(DebugEventType type)
 {
-#ifndef LIBRETRO
+#ifndef NO_DEBUGGER
 	if(_debugger) {
 		_debugger->GetEventManager()->AddSpecialEvent(type);
 	}
@@ -1515,7 +1515,7 @@ void Console::DebugAddDebugEvent(DebugEventType type)
 
 bool Console::DebugProcessRamOperation(MemoryOperationType type, uint16_t & addr, uint8_t & value)
 {
-#ifndef LIBRETRO
+#ifndef NO_DEBUGGER
 	if(_debugger) {
 		return _debugger->ProcessRamOperation(type, addr, value);
 	}

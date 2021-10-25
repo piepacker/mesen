@@ -7,6 +7,7 @@
 #include "LibretroKeyManager.h"
 #include "LibretroMessageManager.h"
 #include "libretro.h"
+#include "hcdebug.h"
 #include "../Core/Console.h"
 #include "../Core/VideoDecoder.h"
 #include "../Core/VideoRenderer.h"
@@ -16,6 +17,7 @@
 #include "../Core/CheatManager.h"
 #include "../Core/HdData.h"
 #include "../Core/SaveStateManager.h"
+#include "../Core/ScriptingContext.h"
 #include "../Core/DebuggerTypes.h"
 #include "../Core/GameDatabase.h"
 #include "../Utilities/FolderUtilities.h"
@@ -102,6 +104,8 @@ extern "C" {
 			logCallback(level, message);
 		}
 	}
+	
+	static RETRO_CALLCONV void* hc_set_debugger(hc_DebuggerIf* const);
 
 	RETRO_API unsigned retro_api_version()
 	{
@@ -146,6 +150,16 @@ extern "C" {
 		_console->SaveBatteries();
 		_console->Release(true);
 		_console.reset();
+	}
+	
+	static RETRO_CALLCONV retro_proc_address_t get_proc_address(const char* sym)
+	{
+		if (!strcmp(sym, "hc_set_debuggger") || !strcmp(sym, "hc_set_debugger"))
+		{
+			return (retro_proc_address_t)hc_set_debugger;
+		}
+		
+		return nullptr;
 	}
 
 	RETRO_API void retro_set_environment(retro_environment_t env)
@@ -254,6 +268,8 @@ extern "C" {
 		retroEnv(RETRO_ENVIRONMENT_SET_VARIABLES, (void*)vars);
 		retroEnv(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
 		retroEnv(RETRO_ENVIRONMENT_SET_CONTENT_INFO_OVERRIDE, (void*)content_overrides);
+		retro_get_proc_address_interface get_proc{ get_proc_address };
+		retroEnv(RETRO_ENVIRONMENT_SET_PROC_ADDRESS_CALLBACK, (void*)&get_proc);
 	}
 
 	RETRO_API void retro_set_video_refresh(retro_video_refresh_t sendFrame)
@@ -1181,4 +1197,144 @@ extern "C" {
 		}
 		return 0;
 	}
+}
+
+// hcdebug implementation -------------------------------------------------------------------------------
+
+static hc_DebuggerIf* debugger = nullptr;
+
+class HCDebugContext : public ScriptingContext
+{
+public:
+	HCDebugContext(Debugger* d)
+		: ScriptingContext(d)
+	{}
+protected:
+	void InternalCallMemoryCallback(uint16_t addr, uint8_t& value, CallbackType type) override
+	{
+		for (auto& ref : _callbacks[(int)type][addr])
+		{
+			if (debugger->v1.breakpoint_cb) debugger->v1.breakpoint_cb(ref);
+		}
+	}
+	
+	int InternalCallEventCallback(EventType type) override
+	{
+		return 0;
+	}
+};
+
+static HCDebugContext& get_scripting_context()
+{
+	static shared_ptr<HCDebugContext> context;
+	if (context) return *context;
+	shared_ptr<Debugger> debugger = _console->GetDebugger();
+	context.reset(new HCDebugContext(debugger.get()));
+	debugger->AttachScript(context);
+	return *context;
+}
+
+static unsigned breakpoint_id = 1;
+
+static hc_Memory const main_memory = {
+	/* id, description*/
+	"cpu", "Main",
+	/* alignment, base_address, size */
+	1, 0, 0x10000,
+	
+	/* peek */
+	[](void*, uint64_t address) -> uint8_t {
+		uint8_t* data = _console->GetRamBuffer(address);
+		return data ? *data : 0;
+	},
+	
+	/* poke */
+	[](void*, uint64_t address, uint8_t value) {
+		uint8_t* data = _console->GetRamBuffer(address);
+		if (data) *data = value;
+	},
+	
+	// set_watchpoint
+	[](void*, uint64_t address, uint64_t length, int read, int write) -> unsigned{
+		HCDebugContext& context = get_scripting_context();
+		unsigned _breakpoint_id = (read || write) ? breakpoint_id++ : 0;
+		if (read)  context.RegisterMemoryCallback  (CallbackType::CpuRead, address, address + length, _breakpoint_id);
+		if (write) context.RegisterMemoryCallback  (CallbackType::CpuWrite, address, address + length, _breakpoint_id);
+		return 1;
+	},
+	
+	// breakpoints, num_breakpoints
+	nullptr, 0
+};
+
+static hc_Memory prg_rom = {
+	"prg-rom", "prg ROM",
+	1, 0, 0,
+	
+	/* peek */
+	[](void*, uint64_t address) -> uint8_t {
+		uint8_t* data = _console->GetMapper()->GetPrgRom();
+		return (data && address < _console->GetMapper()->GetMemorySize(DebugMemoryType::PrgRom))
+			? *(data + address)
+			: 0;
+	},
+	
+	/* poke */
+	[](void*, uint64_t address, uint8_t value) {
+		uint8_t* data = _console->GetMapper()->GetPrgRom();
+		if (data && address < _console->GetMapper()->GetMemorySize(DebugMemoryType::PrgRom))
+			*data = value;
+	},
+	
+	/* set_watchpoint, break_points, num_breakpoints */
+	nullptr, nullptr, 0
+};
+
+static hc_Cpu const cpu = {
+	/* description, type, is_main */
+	"Main CPU", HC_CPU_6502, 1,
+	/* memory_region */
+	&main_memory,
+	/* get_register, set_register, set_reg_breakpoint */
+	nullptr, nullptr, nullptr,
+	/* step_into, step_over, step_out */
+	nullptr, nullptr, nullptr,
+	/* set_exec_breakpoint, set_io_watchpoint, set_int_breakpoint */
+	[](void* ud, uint64_t address) -> unsigned {
+		HCDebugContext& context = get_scripting_context();
+		unsigned _breakpoint_id = breakpoint_id++;
+		context.RegisterMemoryCallback(CallbackType::CpuExec, address, address + 1, _breakpoint_id);
+		return _breakpoint_id;
+	}, nullptr, nullptr,
+	/* break_points, num_break_points */
+	nullptr, 0
+};
+
+static hc_Cpu const* cpus[] = {
+	&cpu
+};
+
+static hc_Memory const* system_memory[] = {
+	&prg_rom
+};
+
+static hc_System const mesen_system = {
+	/* description */
+	"NES",
+	/* cpus, num_cpus */
+	cpus, sizeof(cpus) / sizeof(cpus[0]),
+	/* memory_regions, num_memory_regions */
+	system_memory, 1,
+	/* break_points, num_break_points */
+	nullptr, 0
+};
+
+static RETRO_CALLCONV void* hc_set_debugger(hc_DebuggerIf* const debugger_if) {
+	debugger = debugger_if;
+	debugger_if->core_api_version = HC_API_VERSION;
+	debugger_if->v1.system = &mesen_system;
+	
+	// TODO: update prg rom memory.
+	
+	return (void*)&mesen_system;
 }

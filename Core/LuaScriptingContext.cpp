@@ -109,10 +109,6 @@ void LuaScriptingContext::UnregisterEventCallback(EventType type, int reference)
 
 void LuaScriptingContext::InternalCallMemoryCallback(uint16_t addr, uint8_t &value, CallbackType type)
 {
-	if(_callbacks[(int)type][addr].empty()) {
-		return;
-	}
-
 	_timer.Reset();
 	_context = this;
 	lua_sethook(_lua, LuaScriptingContext::ExecutionCountHook, LUA_MASKCOUNT, 1000); 
@@ -137,10 +133,6 @@ void LuaScriptingContext::InternalCallMemoryCallback(uint16_t addr, uint8_t &val
 
 int LuaScriptingContext::InternalCallEventCallback(EventType type)
 {
-	if(_eventCallbacks[(int)type].empty()) {
-		return 0;
-	}
-
 	_timer.Reset();
 	_context = this;
 	lua_sethook(_lua, LuaScriptingContext::ExecutionCountHook, LUA_MASKCOUNT, 1000); 
