@@ -113,6 +113,7 @@ private:
 	uint32_t _flags;
 
 	string _romName;
+	bool _stepRoot; // true if any step operation is occurring. Used only if libretro enabled, for efficiency reasons.
 	atomic<int32_t> _stepCount;
 	atomic<int32_t> _ppuStepCount;
 	atomic<int32_t> _stepCycleCount;
@@ -159,6 +160,7 @@ private:
 
 	void UpdatePpuCyclesToProcess();
 	void ResetStepState();
+	void CalculateStepRoot();
 
 public:
 	Debugger(shared_ptr<Console> console, shared_ptr<CPU> cpu, shared_ptr<PPU> ppu, shared_ptr<APU> apu, shared_ptr<MemoryManager> memoryManager, shared_ptr<BaseMapper> mapper);

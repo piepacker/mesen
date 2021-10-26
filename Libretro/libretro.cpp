@@ -1285,6 +1285,21 @@ public:
 	{
 		GetMemoryManager()->DebugWrite(address, value);
 	}
+	
+	void step()
+	{
+		GetDebugger()->Step();
+	}
+	
+	void step_over()
+	{
+		GetDebugger()->StepOver();
+	}
+	
+	void step_out()
+	{
+		GetDebugger()->StepOut();
+	}
 };
 
 static HCDebugContext& get_scripting_context()
@@ -1368,8 +1383,18 @@ static hc_Cpu const cpu = {
 	},
 	/* set_reg_breakpoint */
 	nullptr,
-	/* step_into, step_over, step_out */
-	nullptr, nullptr, nullptr,
+	/* step_into */
+	[](void* ud) -> void {
+		get_scripting_context().step();
+	},
+	/* step_over */
+	[](void* ud) -> void {
+		get_scripting_context().step_over();
+	},
+	/* step_out */
+	[](void* ud) -> void {
+		get_scripting_context().step_out();
+	},
 	/* set_exec_breakpoint */
 	[](void* ud, uint64_t address) -> unsigned {
 		HCDebugContext& context = get_scripting_context();

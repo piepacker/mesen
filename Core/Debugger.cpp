@@ -67,6 +67,7 @@ Debugger::Debugger(shared_ptr<Console> console, shared_ptr<CPU> cpu, shared_ptr<
 	_bpExpEval->RunTests();
 #endif
 
+	_stepRoot = false;
 	_stepOut = false;
 	_stepCount = -1;
 	_stepOverAddr = -1;
@@ -702,9 +703,14 @@ void Debugger::ProcessPpuCycle()
 bool Debugger::ProcessRamOperation(MemoryOperationType type, uint16_t &addr, uint8_t &value)
 {
 	#ifdef LIBRETRO
-	ProcessCpuOperation(addr, value, type);
-	return true;
-	#else
+	if (!_stepRoot)
+	{
+		ProcessCpuOperation(addr, value, type);
+		return true;
+	}
+	CalculateStepRoot();
+	#endif
+	
 	OperationInfo operationInfo { addr, (int16_t)value, type };
 
 	_memoryOperationType = type;
@@ -958,7 +964,6 @@ bool Debugger::ProcessRamOperation(MemoryOperationType type, uint16_t &addr, uin
 	}
 
 	return true;
-	#endif
 }
 
 bool Debugger::SleepUntilResume(BreakSource source, uint32_t breakpointId, BreakpointType bpType, uint16_t bpAddress, uint8_t bpValue, MemoryOperationType bpMemOpType)
@@ -1108,8 +1113,21 @@ void Debugger::ResetStepState()
 	_stepOverAddr = -1;
 	_stepCycleCount = -1;
 	_stepCount = -1;
+	_stepRoot = false;
 	_breakOnScanline = -2;
 	_stepOut = false;
+}
+
+void Debugger::CalculateStepRoot()
+{
+	if (_stepCount >= 0 || _stepCycleCount >= 0 || _stepOut || _stepOverAddr != -1)
+	{
+		_stepRoot = false;
+	}
+	else
+	{
+		_stepRoot = true;
+	}
 }
 
 void Debugger::PpuStep(uint32_t count)
@@ -1123,6 +1141,7 @@ void Debugger::Step(uint32_t count, BreakSource source)
 {
 	//Run CPU for [count] INSTRUCTIONS before breaking again
 	ResetStepState();
+	_stepRoot = true;
 	_stepCount = count;
 	_breakSource = source;
 }
@@ -1172,6 +1191,7 @@ void Debugger::Run()
 	//Resume execution after a breakpoint has been hit
 	_ppuStepCount = -1;
 	_stepCount = -1;
+	_stepRoot = false;
 	_breakOnScanline = -2;
 	_stepCycleCount = -1;
 	_stepOut = false;
