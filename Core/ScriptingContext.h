@@ -6,6 +6,8 @@
 
 class Debugger;
 class CPU;
+class BaseMapper;
+class MemoryManager;
 
 enum class CallbackType
 {
@@ -76,5 +78,9 @@ public:
 	void RegisterEventCallback(EventType type, int reference);
 	virtual void UnregisterEventCallback(EventType type, int reference);
 protected:
+	// access debugger's private fields.
+	// add more as needed.
 	CPU* GetCPU();
+	BaseMapper* GetMapper();
+	MemoryManager* GetMemoryManager();
 };

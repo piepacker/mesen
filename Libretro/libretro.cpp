@@ -1275,6 +1275,16 @@ public:
 		}
 		cpu->SetState(state);
 	}
+	
+	uint8_t peek(uint64_t address)
+	{
+		return GetMemoryManager()->DebugRead(address);
+	}
+	
+	void poke(uint64_t address, uint8_t value)
+	{
+		GetMemoryManager()->DebugWrite(address, value);
+	}
 };
 
 static HCDebugContext& get_scripting_context()
@@ -1297,14 +1307,12 @@ static hc_Memory const main_memory = {
 	
 	/* peek */
 	[](void*, uint64_t address) -> uint8_t {
-		uint8_t* data = _console->GetRamBuffer(address);
-		return data ? *data : 0;
+		return get_scripting_context().peek(address);
 	},
 	
 	/* poke */
 	[](void*, uint64_t address, uint8_t value) {
-		uint8_t* data = _console->GetRamBuffer(address);
-		if (data) *data = value;
+		get_scripting_context().poke(address, value);
 	},
 	
 	// set_watchpoint
@@ -1322,6 +1330,8 @@ static hc_Memory const main_memory = {
 
 static hc_Memory prg_rom = {
 	"prg-rom", "prg ROM",
+	
+	/* alignment, base_address, size */
 	1, 0, 0,
 	
 	/* peek */
@@ -1397,7 +1407,10 @@ static RETRO_CALLCONV void* hc_set_debugger(hc_DebuggerIf* const debugger_if) {
 	debugger_if->core_api_version = HC_API_VERSION;
 	debugger_if->v1.system = &mesen_system;
 	
-	// TODO: update prg rom memory.
+	if (_console && _console->GetMapper())
+	{
+		prg_rom.v1.size = _console->GetMapper()->GetMemorySize(DebugMemoryType::PrgRom);
+	}
 	
 	return (void*)&mesen_system;
 }
