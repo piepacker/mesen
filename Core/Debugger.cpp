@@ -34,6 +34,7 @@
 #include "EventManager.h"
 
 string Debugger::_disassemblerOutput = "";
+bool Debugger::_stepRoot;
 
 Debugger::Debugger(shared_ptr<Console> console, shared_ptr<CPU> cpu, shared_ptr<PPU> ppu, shared_ptr<APU> apu, shared_ptr<MemoryManager> memoryManager, shared_ptr<BaseMapper> mapper)
 {

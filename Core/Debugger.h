@@ -112,7 +112,7 @@ private:
 	uint32_t _flags;
 
 	string _romName;
-	bool _stepRoot; // true if any step operation is occurring. Used only if libretro enabled, for efficiency reasons.
+	static bool _stepRoot; // true if any step operation is occurring. Used only if libretro enabled, for efficiency reasons.
 	atomic<int32_t> _stepCount;
 	atomic<int32_t> _ppuStepCount;
 	atomic<int32_t> _stepCycleCount;
