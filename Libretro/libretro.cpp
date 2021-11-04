@@ -1227,7 +1227,7 @@ public:
 	uint64_t GetRegister(unsigned reg)
 	{
 		State state;
-		GetCPU()->GetState(state);
+		_console->GetCpu()->GetState(state);
 		switch (reg)
 		{
 		case HC_6502_A:
@@ -1250,7 +1250,7 @@ public:
 	void SetRegister(unsigned reg, uint64_t value)
 	{
 		State state;
-		CPU* cpu = GetCPU();
+		CPU* cpu = _console->GetCpu();
 		cpu->GetState(state);
 		switch (reg)
 		{
@@ -1278,12 +1278,12 @@ public:
 	
 	uint8_t peek(uint64_t address)
 	{
-		return GetMemoryManager()->DebugRead(address);
+		return _console->GetMemoryManager()->DebugRead(address);
 	}
 	
 	void poke(uint64_t address, uint8_t value)
 	{
-		GetMemoryManager()->DebugWrite(address, value);
+		_console->GetMemoryManager()->DebugWrite(address, value);
 	}
 	
 	void step()
@@ -1344,7 +1344,7 @@ static hc_Memory const main_memory = {
 };
 
 static hc_Memory prg_rom = {
-	"prg-rom", "prg ROM",
+	"rom", "prg ROM",
 	
 	/* alignment, base_address, size */
 	1, 0, 0,

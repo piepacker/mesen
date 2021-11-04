@@ -238,18 +238,3 @@ void ScriptingContext::ClearSavestateData(int slot)
 		_saveSlotData.erase(slot);
 	}
 }
-
-CPU* ScriptingContext::GetCPU()
-{
-	return _debugger->_cpu.get();
-}
-
-BaseMapper* ScriptingContext::GetMapper()
-{
-	return _debugger->_mapper.get();
-}
-
-MemoryManager* ScriptingContext::GetMemoryManager()
-{
-	return _debugger->_memoryManager.get();
-}

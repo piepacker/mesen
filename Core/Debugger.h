@@ -40,7 +40,6 @@ enum class CdlStripFlag;
 
 class Debugger
 {
-	friend ScriptingContext; // we want scripts to be able to access everything
 private:
 	static constexpr int BreakpointTypeCount = 8;
 
