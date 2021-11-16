@@ -45,6 +45,10 @@ string ScriptingContext::GetScriptName()
 
 void ScriptingContext::CallMemoryCallback(uint16_t addr, uint8_t &value, CallbackType type)
 {
+	if(_callbacks[(int)type][addr].empty()) {
+		return;
+	}
+	
 	_inExecOpEvent = type == CallbackType::CpuExec;
 	InternalCallMemoryCallback(addr, value, type);
 	_inExecOpEvent = false;
@@ -52,6 +56,10 @@ void ScriptingContext::CallMemoryCallback(uint16_t addr, uint8_t &value, Callbac
 
 int ScriptingContext::CallEventCallback(EventType type)
 {
+	if(_eventCallbacks[(int)type].empty()) {
+		return 0;
+	}
+	
 	_inStartFrameEvent = type == EventType::StartFrame;
 	int returnValue = InternalCallEventCallback(type);
 	_inStartFrameEvent = false;
@@ -96,6 +104,10 @@ void ScriptingContext::RegisterMemoryCallback(CallbackType type, int startAddr, 
 	}
 
 	for(int i = startAddr; i <= endAddr; i++) {
+		if (_callbacks[(int)type][i].empty())
+		{
+			_debugger->WatchMemory(i);
+		}
 		_callbacks[(int)type][i].push_back(reference);
 	}
 }
@@ -117,11 +129,19 @@ void ScriptingContext::UnregisterMemoryCallback(CallbackType type, int startAddr
 	for(int i = startAddr; i <= endAddr; i++) {
 		vector<int> &refs = _callbacks[(int)type][i];
 		refs.erase(std::remove(refs.begin(), refs.end(), reference), refs.end());
+		if (_callbacks[(int)type][i].empty())
+		{
+			_debugger->UnwatchMemory(i);
+		}
 	}
 }
 
 void ScriptingContext::RegisterEventCallback(EventType type, int reference)
 {
+	if (_eventCallbacks[(int)type].empty())
+	{
+		_debugger->WatchEvent(type);
+	}
 	_eventCallbacks[(int)type].push_back(reference);
 }
 
@@ -129,6 +149,10 @@ void ScriptingContext::UnregisterEventCallback(EventType type, int reference)
 {
 	vector<int> &callbacks = _eventCallbacks[(int)type];
 	callbacks.erase(std::remove(callbacks.begin(), callbacks.end(), reference), callbacks.end());
+	if (callbacks.empty())
+	{
+		_debugger->UnwatchEvent(type);
+	}
 }
 
 void ScriptingContext::RequestSaveState(int slot)

@@ -27,7 +27,7 @@ public:
 
 	static void SetScriptTimeout(uint32_t timeout);
 
-	bool LoadScript(string scriptName, string scriptContent, Debugger* debugger) override;
+	bool LoadScript(string scriptName, string scriptContent, Debugger* debugger);
 	
 	void UnregisterMemoryCallback(CallbackType type, int startAddr, int endAddr, int reference) override;
 	void UnregisterEventCallback(EventType type, int reference) override;

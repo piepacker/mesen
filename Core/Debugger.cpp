@@ -34,6 +34,7 @@
 #include "EventManager.h"
 
 string Debugger::_disassemblerOutput = "";
+bool Debugger::_stepRoot;
 
 Debugger::Debugger(shared_ptr<Console> console, shared_ptr<CPU> cpu, shared_ptr<PPU> ppu, shared_ptr<APU> apu, shared_ptr<MemoryManager> memoryManager, shared_ptr<BaseMapper> mapper)
 {
@@ -67,6 +68,7 @@ Debugger::Debugger(shared_ptr<Console> console, shared_ptr<CPU> cpu, shared_ptr<
 	_bpExpEval->RunTests();
 #endif
 
+	_stepRoot = false;
 	_stepOut = false;
 	_stepCount = -1;
 	_stepOverAddr = -1;
@@ -121,6 +123,8 @@ Debugger::Debugger(shared_ptr<Console> console, shared_ptr<CPU> cpu, shared_ptr<
 
 	_hasScript = false;
 	_nextScriptId = 0;
+	memset(_memory_watched, 0, sizeof(_memory_watched));
+	memset(_event_watched, 0, sizeof(_event_watched));
 
 	_released = false;
 
@@ -660,6 +664,7 @@ bool Debugger::IsPpuCycleToProcess()
 
 void Debugger::ProcessPpuCycle()
 {
+	#ifndef LIBRETRO
 	if(_proccessPpuCycle[_ppu->GetCurrentCycle()]) {
 		int32_t currentCycle = (_ppu->GetCurrentCycle() << 9) + _ppu->GetCurrentScanline();
 		for(auto updateCycle : _ppuViewerUpdateCycle) {
@@ -693,10 +698,20 @@ void Debugger::ProcessPpuCycle()
 			SleepUntilResume(BreakSource::PpuStep);
 		}
 	}
+	#endif
 }
 
 bool Debugger::ProcessRamOperation(MemoryOperationType type, uint16_t &addr, uint8_t &value)
 {
+	#ifdef LIBRETRO
+	if (!_stepRoot)
+	{
+		ProcessCpuOperation(addr, value, type);
+		return true;
+	}
+	CalculateStepRoot();
+	#endif
+	
 	OperationInfo operationInfo { addr, (int16_t)value, type };
 
 	_memoryOperationType = type;
@@ -1015,6 +1030,7 @@ bool Debugger::SleepUntilResume(BreakSource source, uint32_t breakpointId, Break
 
 void Debugger::ProcessVramReadOperation(MemoryOperationType type, uint16_t addr, uint8_t &value)
 {
+	#ifndef LIBRETRO
 	PpuAddressTypeInfo addressInfo;
 	_mapper->GetPpuAbsoluteAddressAndType(addr, &addressInfo);
 	_codeDataLogger->SetFlag(addressInfo.Address, type == MemoryOperationType::Read ? CdlChrFlags::Read : CdlChrFlags::Drawn);
@@ -1025,10 +1041,12 @@ void Debugger::ProcessVramReadOperation(MemoryOperationType type, uint16_t addr,
 	}
 	_memoryAccessCounter->ProcessPpuMemoryRead(addressInfo, _cpu->GetCycleCount());
 	ProcessPpuOperation(addr, value, MemoryOperationType::Read);
+	#endif
 }
 
 void Debugger::ProcessVramWriteOperation(uint16_t addr, uint8_t &value)
 {
+	#ifndef LIBRETRO
 	PpuAddressTypeInfo addressInfo;
 	_mapper->GetPpuAbsoluteAddressAndType(addr, &addressInfo);
 
@@ -1038,6 +1056,7 @@ void Debugger::ProcessVramWriteOperation(uint16_t addr, uint8_t &value)
 	}
 	_memoryAccessCounter->ProcessPpuMemoryWrite(addressInfo, _cpu->GetCycleCount());
 	ProcessPpuOperation(addr, value, MemoryOperationType::Write);
+	#endif
 }
 
 void Debugger::GetInstructionProgress(InstructionProgress &state)
@@ -1095,8 +1114,21 @@ void Debugger::ResetStepState()
 	_stepOverAddr = -1;
 	_stepCycleCount = -1;
 	_stepCount = -1;
+	_stepRoot = false;
 	_breakOnScanline = -2;
 	_stepOut = false;
+}
+
+void Debugger::CalculateStepRoot()
+{
+	if (_stepCount >= 0 || _stepCycleCount >= 0 || _stepOut || _stepOverAddr != -1)
+	{
+		_stepRoot = false;
+	}
+	else
+	{
+		_stepRoot = true;
+	}
 }
 
 void Debugger::PpuStep(uint32_t count)
@@ -1110,6 +1142,7 @@ void Debugger::Step(uint32_t count, BreakSource source)
 {
 	//Run CPU for [count] INSTRUCTIONS before breaking again
 	ResetStepState();
+	_stepRoot = true;
 	_stepCount = count;
 	_breakSource = source;
 }
@@ -1159,6 +1192,7 @@ void Debugger::Run()
 	//Resume execution after a breakpoint has been hit
 	_ppuStepCount = -1;
 	_stepCount = -1;
+	_stepRoot = false;
 	_breakOnScanline = -2;
 	_stepCycleCount = -1;
 	_stepOut = false;
@@ -1495,6 +1529,18 @@ void Debugger::SetInputOverride(uint8_t port, uint32_t state)
 	_inputOverride[port] = state;
 }
 
+int Debugger::AttachScript(shared_ptr<ScriptingContext> context)
+{
+	DebugBreakHelper helper(this);
+	auto lock = _scriptLock.AcquireSafe();
+	
+	shared_ptr<ScriptHost> script(new ScriptHost(_nextScriptId++));
+	script->AttachScript(context);
+	_scripts.push_back(script);
+	_hasScript = true;
+	return script->GetScriptId();
+}
+
 int Debugger::LoadScript(string name, string content, int32_t scriptId)
 {
 	DebugBreakHelper helper(this);
@@ -1549,6 +1595,27 @@ const char* Debugger::GetScriptLog(int32_t scriptId)
 	return "";
 }
 
+void Debugger::WatchMemory(uint16_t addr)
+{
+	auto lock = _scriptLock.AcquireSafe();
+	_memory_watched[(int)addr]++;
+}
+void Debugger::UnwatchMemory(uint16_t addr)
+{
+	auto lock = _scriptLock.AcquireSafe();
+	_memory_watched[(int)addr]--;
+}
+void Debugger::WatchEvent(EventType type)
+{
+	auto lock = _scriptLock.AcquireSafe();
+	_event_watched[(int)type]++;
+}
+void Debugger::UnwatchEvent(EventType type)
+{
+	auto lock = _scriptLock.AcquireSafe();
+	_event_watched[(int)type]--;
+}
+
 void Debugger::ResetCounters()
 {
 	//This is called when loading a state (among other things)
@@ -1580,7 +1647,7 @@ void Debugger::ProcessScriptSaveState(uint16_t &addr, uint8_t &value)
 
 void Debugger::ProcessCpuOperation(uint16_t &addr, uint8_t &value, MemoryOperationType type)
 {
-	if(_hasScript) {
+	if(_memory_watched[addr]) {
 		for(shared_ptr<ScriptHost> &script : _scripts) {
 			script->ProcessCpuOperation(addr, value, type);
 			if(type == MemoryOperationType::ExecOpCode && script->CheckStateLoadedFlag()) {
@@ -1593,7 +1660,7 @@ void Debugger::ProcessCpuOperation(uint16_t &addr, uint8_t &value, MemoryOperati
 
 void Debugger::ProcessPpuOperation(uint16_t addr, uint8_t &value, MemoryOperationType type)
 {
-	if(_hasScript) {
+	if(_memory_watched[addr]) {
 		for(shared_ptr<ScriptHost> &script : _scripts) {
 			script->ProcessPpuOperation(addr, value, type);
 		}
@@ -1602,7 +1669,7 @@ void Debugger::ProcessPpuOperation(uint16_t addr, uint8_t &value, MemoryOperatio
 
 void Debugger::ProcessEvent(EventType type)
 {
-	if(_hasScript) {
+	if(_event_watched[(int)type]) {
 		for(shared_ptr<ScriptHost> &script : _scripts) {
 			script->ProcessEvent(type);
 		}
