@@ -20,7 +20,7 @@ jobs:
       - run: make -C Libretro -j 4 && strip -s Libretro/mesen_libretro.so
 
       - name: ZIP Release
-        uses: papeloto/action-zip@v1
+        uses: vimtor/action-zip@v1
         with:
           files: Libretro/mesen_libretro.so
           dest: mesen_libretro.so.zip
