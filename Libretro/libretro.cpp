@@ -2,6 +2,7 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
+#include <map>
 #include "LibretroRenderer.h"
 #include "LibretroSoundManager.h"
 #include "LibretroKeyManager.h"
@@ -1201,7 +1202,15 @@ extern "C" {
 
 // hcdebug implementation -------------------------------------------------------------------------------
 
-static hc_DebuggerIf* debugger = nullptr;
+
+namespace
+{
+hc_DebuggerIf* debugger = nullptr;
+
+// forward declarations -- 'extern' is not helpful here, but
+// is required for const forward declarations?
+extern hc_Memory const main_memory;
+extern hc_Cpu const cpu;
 
 class HCDebugContext : public ScriptingContext
 {
@@ -1212,9 +1221,34 @@ public:
 protected:
 	void InternalCallMemoryCallback(uint16_t addr, uint8_t& value, CallbackType type) override
 	{
+		hc_Event e;
+		switch (type)
+		{
+		case CallbackType::CpuExec:
+			e.type = HC_EVENT_EXECUTION;
+			e.execution.cpu = &cpu;
+			e.execution.address = addr;
+			break;
+		case CallbackType::CpuWrite:
+		case CallbackType::CpuRead:
+			e.type = HC_EVENT_MEMORY;
+			e.memory.memory = &main_memory;
+			e.memory.address = addr;
+			e.memory.operation = (type == CallbackType::CpuRead)
+				? HC_MEMORY_READ
+				: HC_MEMORY_WRITE;
+			e.memory.value = value;
+			break;
+		default:
+			return;
+		}
+		
 		for (auto& ref : _callbacks[(int)type][addr])
 		{
-			if (debugger->v1.breakpoint_cb) debugger->v1.breakpoint_cb(ref);
+			if (debugger->v1.handle_event)
+			{
+				debugger->v1.handle_event(debugger->v1.user_data, ref, &e);
+			}
 		}
 	}
 	
@@ -1237,11 +1271,11 @@ public:
 		case HC_6502_Y:
 			return state.Y;
 		case HC_6502_S:
-			return state.SP;
+			return state.PS;
 		case HC_6502_PC:
 			return state.PC;
 		case HC_6502_P:
-			return state.PS;
+			return state.SP;
 		default:
 			return 0;
 		}
@@ -1264,13 +1298,13 @@ public:
 			state.Y = value;
 			break;
 		case HC_6502_S:
-			state.SP = value;
+			state.PS = value;
 			break;
 		case HC_6502_PC:
 			cpu->SetDebugPC(value);
 			return;
 		case HC_6502_P:
-			state.PS = value;
+			state.SP = value;
 			break;
 		}
 		cpu->SetState(state);
@@ -1288,21 +1322,24 @@ public:
 	
 	void step()
 	{
+		GetDebugger()->ReadStepContext();
 		GetDebugger()->Step();
 	}
 	
 	void step_over()
 	{
+		GetDebugger()->ReadStepContext();
 		GetDebugger()->StepOver();
 	}
 	
 	void step_out()
 	{
+		GetDebugger()->ReadStepContext();
 		GetDebugger()->StepOut();
 	}
 };
 
-static HCDebugContext& get_scripting_context()
+HCDebugContext& get_scripting_context()
 {
 	static shared_ptr<HCDebugContext> context;
 	if (context) return *context;
@@ -1312,45 +1349,46 @@ static HCDebugContext& get_scripting_context()
 	return *context;
 }
 
-static unsigned breakpoint_id = 1;
+static hc_SubscriptionID breakpoint_id = 0;
 
-static hc_Memory const main_memory = {
+hc_SubscriptionID next_breakpoint_id()
+{
+	return breakpoint_id = (breakpoint_id + 1) & ~(1ULL << 63ULL);
+}
+
+
+hc_Memory const main_memory = {
 	/* id, description*/
 	"cpu", "Main",
 	/* alignment, base_address, size */
 	1, 0, 0x10000,
 	
+	// breakpoints, num_breakpoints
+	nullptr, 0,
+	
 	/* peek */
-	[](void*, uint64_t address) -> uint8_t {
+	[](uint64_t address) -> uint8_t {
 		return get_scripting_context().peek(address);
 	},
 	
 	/* poke */
-	[](void*, uint64_t address, uint8_t value) {
+	[](uint64_t address, uint8_t value) -> int {
 		get_scripting_context().poke(address, value);
+		return true;
 	},
-	
-	// set_watchpoint
-	[](void*, uint64_t address, uint64_t length, int read, int write) -> unsigned{
-		HCDebugContext& context = get_scripting_context();
-		unsigned _breakpoint_id = (read || write) ? breakpoint_id++ : 0;
-		if (read)  context.RegisterMemoryCallback  (CallbackType::CpuRead, address, address + length, _breakpoint_id);
-		if (write) context.RegisterMemoryCallback  (CallbackType::CpuWrite, address, address + length, _breakpoint_id);
-		return 1;
-	},
-	
-	// breakpoints, num_breakpoints
-	nullptr, 0
 };
 
-static hc_Memory prg_rom = {
+hc_Memory prg_rom = {
 	"rom", "prg ROM",
 	
 	/* alignment, base_address, size */
 	1, 0, 0,
 	
+	/* break_points, num_breakpoints */
+	nullptr, 0,
+	
 	/* peek */
-	[](void*, uint64_t address) -> uint8_t {
+	[](uint64_t address) -> uint8_t {
 		uint8_t* data = _console->GetMapper()->GetPrgRom();
 		return (data && address < _console->GetMapper()->GetMemorySize(DebugMemoryType::PrgRom))
 			? *(data + address)
@@ -1358,65 +1396,47 @@ static hc_Memory prg_rom = {
 	},
 	
 	/* poke */
-	[](void*, uint64_t address, uint8_t value) {
+	[](uint64_t address, uint8_t value) -> int {
 		uint8_t* data = _console->GetMapper()->GetPrgRom();
 		if (data && address < _console->GetMapper()->GetMemorySize(DebugMemoryType::PrgRom))
+		{
 			*data = value;
+			return true;
+		}
+		else
+		{
+			return false;
+		}
 	},
-	
-	/* set_watchpoint, break_points, num_breakpoints */
-	nullptr, nullptr, 0
 };
 
-static hc_Cpu const cpu = {
-	/* description, type, is_main */
-	"Main CPU", HC_CPU_6502, 1,
+hc_Cpu const cpu = {
+	/* id, description, type, is_main */
+	"main-cpu", "Main CPU", HC_CPU_6502, 1,
 	/* memory_region */
 	&main_memory,
+	/* break_points, num_break_points */
+	nullptr, 0,
 	/* get_register */
-	[](void* ud, unsigned reg) -> uint64_t {
+	[](unsigned reg) -> uint64_t {
 		return get_scripting_context().GetRegister(reg);
 	},
 	/* set_register */
-	[](void* ud, unsigned reg, uint64_t value) -> void {
+	[](unsigned reg, uint64_t value) -> int {
 		get_scripting_context().SetRegister(reg, value);
+		return true;
 	},
-	/* set_reg_breakpoint */
-	nullptr,
-	/* step_into */
-	[](void* ud) -> void {
-		get_scripting_context().step();
-	},
-	/* step_over */
-	[](void* ud) -> void {
-		get_scripting_context().step_over();
-	},
-	/* step_out */
-	[](void* ud) -> void {
-		get_scripting_context().step_out();
-	},
-	/* set_exec_breakpoint */
-	[](void* ud, uint64_t address) -> unsigned {
-		HCDebugContext& context = get_scripting_context();
-		unsigned _breakpoint_id = breakpoint_id++;
-		context.RegisterMemoryCallback(CallbackType::CpuExec, address, address + 1, _breakpoint_id);
-		return _breakpoint_id;
-	},
-	/* set_io_watchpoint, set_int_breakpoint */
-	nullptr, nullptr,
-	/* break_points, num_break_points */
-	nullptr, 0
 };
 
-static hc_Cpu const* cpus[] = {
+hc_Cpu const* cpus[] = {
 	&cpu
 };
 
-static hc_Memory const* system_memory[] = {
+hc_Memory const* system_memory[] = {
 	&prg_rom
 };
 
-static hc_System const mesen_system = {
+hc_System const mesen_system = {
 	/* description */
 	"NES",
 	/* cpus, num_cpus */
@@ -1427,10 +1447,110 @@ static hc_System const mesen_system = {
 	nullptr, 0
 };
 
+std::map<hc_SubscriptionID, hc_Subscription> subscriptions;
+
+hc_SubscriptionID subscribe(hc_Subscription const* s)
+{
+	hc_SubscriptionID id = -1;
+	HCDebugContext& context = get_scripting_context();
+	switch (s->type)
+	{
+	case HC_EVENT_EXECUTION: {
+			id = next_breakpoint_id();
+			switch (s->execution.type)
+			{
+			case HC_STEP:
+				// standard breakpoint
+				context.RegisterMemoryCallback(CallbackType::CpuExec, std::min<uint64_t>(s->execution.address_range_begin, 0x10000), std::min<uint64_t>(s->execution.address_range_end, 0x10000), id);
+				subscriptions.emplace(id, *s);
+				return id;
+			case HC_STEP_SKIP_INTERRUPT:
+				return -1; // not supported.
+			case HC_STEP_CURRENT_SUBROUTINE:
+				// only supports step-over over the entirety of ram.
+				if (s->execution.address_range_begin != 0 || s->execution.address_range_end < 0xFFFF) return -1;
+				if (context.GetDebugger()->StepInProgress()) return -1;
+				id = next_breakpoint_id();
+				context.GetDebugger()->SetStepOverCallback([id]() {
+					if (debugger->v1.handle_event)
+					{
+						hc_Event e;
+						e.type = HC_EVENT_EXECUTION;
+						e.execution.cpu = &cpu;
+						e.execution.address = get_scripting_context().GetRegister(HC_6502_PC);
+						debugger->v1.handle_event(debugger->v1.user_data, id, &e);
+					}
+				});
+				subscriptions.emplace(id, *s);
+				context.step_over();
+				return id;
+			}
+		}
+	case HC_EVENT_RETURN: {
+			if (get_scripting_context().GetDebugger()->StepInProgress()) return -1;
+			id = next_breakpoint_id();
+			context.GetDebugger()->SetStepOverCallback([id](){
+					if (debugger->v1.handle_event)
+					{
+						hc_Event e;
+						e.type = HC_EVENT_RETURN;
+						e.execution_return.cpu = &cpu;
+						e.execution_return.previous_address = -1; // TODO
+						e.execution_return.return_address = get_scripting_context().GetRegister(HC_6502_PC);
+						debugger->v1.handle_event(debugger->v1.user_data, id, &e);
+					}
+			});
+			context.step_out();
+			subscriptions.emplace(id, *s);
+			return id;
+		}
+	case HC_EVENT_MEMORY: {
+			if ((s->memory.operation & (HC_MEMORY_WRITE | HC_MEMORY_READ)) == 0)
+			{
+				return -1;
+			}
+			id = next_breakpoint_id();
+			if (s->memory.operation & HC_MEMORY_READ) context.RegisterMemoryCallback(CallbackType::CpuRead, std::min<uint64_t>(s->execution.address_range_begin, 0x10000), std::min<uint64_t>(s->execution.address_range_end, 0x10000), id);
+			if (s->memory.operation & HC_MEMORY_WRITE) context.RegisterMemoryCallback(CallbackType::CpuWrite, std::min<uint64_t>(s->execution.address_range_begin, 0x10000), std::min<uint64_t>(s->execution.address_range_end, 0x10000), id);
+			subscriptions.emplace(id, *s);
+			return id;
+		}
+	default:
+		return -1;
+	}
+}
+
+void unsubscribe(hc_SubscriptionID id)
+{
+	auto iter = subscriptions.find(id);
+	if (iter == subscriptions.end()) return;
+	hc_Subscription const* s = &iter->second;
+	
+	HCDebugContext& context = get_scripting_context();
+	
+	switch (s->type)
+	{
+	case HC_EVENT_EXECUTION: {
+			context.UnregisterMemoryCallback(CallbackType::CpuExec, std::min<uint64_t>(s->execution.address_range_begin, 0x10000), std::min<uint64_t>(s->execution.address_range_end, 0x10000), id);
+		}
+	case HC_EVENT_MEMORY: {
+			if (s->memory.operation & HC_MEMORY_READ) context.UnregisterMemoryCallback(CallbackType::CpuRead, std::min<uint64_t>(s->execution.address_range_begin, 0x10000), std::min<uint64_t>(s->execution.address_range_end, 0x10000), id);
+			if (s->memory.operation & HC_MEMORY_WRITE) context.UnregisterMemoryCallback(CallbackType::CpuWrite, std::min<uint64_t>(s->execution.address_range_begin, 0x10000), std::min<uint64_t>(s->execution.address_range_end, 0x10000), id);
+		}
+	default:
+		return;
+	}
+	
+	subscriptions.erase(iter);
+}
+}
+
 static RETRO_CALLCONV void* hc_set_debugger(hc_DebuggerIf* const debugger_if) {
 	debugger = debugger_if;
 	debugger_if->core_api_version = HC_API_VERSION;
 	debugger_if->v1.system = &mesen_system;
+	debugger_if->v1.subscribe = subscribe;
+	debugger_if->v1.unsubscribe = unsubscribe;
 	
 	if (_console && _console->GetMapper())
 	{

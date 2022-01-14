@@ -4,6 +4,8 @@
 #include <atomic>
 #include <deque>
 #include <unordered_set>
+#include <functional>
+
 using std::atomic;
 using std::deque;
 using std::unordered_set;
@@ -40,6 +42,9 @@ enum class CdlStripFlag;
 
 class Debugger
 {
+public:
+	typedef std::function<void()> StepOverCB;
+	typedef std::function<void()> StepOutCB;
 private:
 	static constexpr int BreakpointTypeCount = 8;
 
@@ -120,6 +125,8 @@ private:
 	atomic<bool> _stepOut;
 	atomic<int32_t> _stepOverAddr;
 	BreakSource _breakSource;
+	StepOverCB _stepOverCallback;
+	StepOutCB _stepOutCallback;
 	
 	atomic<bool> _released;
 	SimpleLock _releaseLock;
@@ -200,6 +207,10 @@ public:
 	void StepOut();
 	void StepBack();
 	void Run();
+	bool StepInProgress() { return _stepRoot; }
+	void ReadStepContext(); // used by Libretro only
+	void SetStepOverCallback(StepOverCB cb) { _stepOverCallback = cb; }
+	void SetStepOutCallback(StepOutCB cb) { _stepOutCallback = cb; }
 
 	void BreakImmediately(BreakSource source);
 	void BreakOnScanline(int16_t scanline);

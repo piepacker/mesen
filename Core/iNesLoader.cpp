@@ -40,7 +40,8 @@ void iNesLoader::LoadRom(RomData& romData, vector<uint8_t>& romFile, NESHeader *
 	romData.SaveChrRamSize = header.GetSaveChrRamSize();
 	romData.WorkRamSize = header.GetWorkRamSize();
 	romData.SaveRamSize = header.GetSaveRamSize();
-
+	
+	romData.TrainerData.reserve(512);
 	if(romData.Info.HasTrainer) {
 		if(dataSize >= 512) {
 			//512-byte trainer at $7000-$71FF (stored before PRG data)
@@ -53,6 +54,8 @@ void iNesLoader::LoadRom(RomData& romData, vector<uint8_t>& romFile, NESHeader *
 			return;
 		}
 	}
+	// ensures the trainer is always of size 512 (even if not present in ines).
+	romData.TrainerData.resize(512);
 
 	size_t bytesRead = buffer - romFile.data();
 

@@ -61,7 +61,8 @@ enum class BreakSource
 	Pause = 10,
 	BreakAfterSuspend = 11,
 	BreakOnPpu2006ScrollGlitch = 12,
-	BreakOnBusConflict = 13
+	BreakOnBusConflict = 13,
+	CpuStepOut=14
 };
 
 enum class AddressType

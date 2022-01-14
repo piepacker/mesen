@@ -651,7 +651,7 @@ void Debugger::ProcessStepConditions(uint16_t addr)
 {
 	if(_stepOut && (_lastInstruction == 0x60 || _lastInstruction == 0x40) && _stepOutReturnAddress == addr) {
 		//RTS/RTI found, if we're on the expected return address, break immediately
-		Step(1);
+		Step(1, BreakSource::CpuStepOut);
 	} else if(_stepOverAddr != -1 && addr == (uint32_t)_stepOverAddr) {
 		Step(1);
 	}
@@ -699,6 +699,24 @@ void Debugger::ProcessPpuCycle()
 		}
 	}
 	#endif
+}
+
+// decodes current instruction and return address.
+void Debugger::ReadStepContext()
+{
+	uint16_t address = _cpu->GetPC();
+	_lastInstruction = _memoryManager->DebugRead(address);
+	
+	// read return address from stack
+	uint8_t sp;
+	{
+		State state;
+		_cpu->GetState(state);
+		sp = state.SP;
+	}
+	uint8_t lo = _memoryManager->DebugRead(0x100 | ++sp);
+	uint8_t hi = _memoryManager->DebugRead(0x100 | ++sp);
+	_stepOutReturnAddress = ((((uint16_t)hi) << 8) | lo) + 1;
 }
 
 bool Debugger::ProcessRamOperation(MemoryOperationType type, uint16_t &addr, uint8_t &value)
@@ -973,12 +991,29 @@ bool Debugger::SleepUntilResume(BreakSource source, uint32_t breakpointId, Break
 	if(stepCount > 0) {
 		_stepCount--;
 		stepCount = _stepCount.load();
+		#ifdef LBIRETRO
+		if (stepCount == 0)
+		{
+			if (_breakSource == BreakSource::CpuStep && _stepOverCallback)
+			{
+				_stepOverCallback();
+				_stepOverCallback = nullptr;
+			}
+			else if (_breakSource == BreakSource::CpuStepOut && _stepOutCallback)
+			{
+				_stepOutCallback();
+				_stepOutCallback = nullptr;
+			}
+			_breakSource = BreakSource::Unspecified;
+		}
+		#endif
 	} else if(stepCount == 0) {
 		//If stepCount was already 0 when we enter the function, it means
 		//Debugger::Suspend() and Debugger::Resume() were called by another thread
 		source = BreakSource::BreakAfterSuspend;
 	}
 
+	#ifndef LIBRETRO
 	//Read both values here since they might change while executing the code below
 	int32_t preventResume = _preventResume;
 	bool breakRequested = _breakRequested;
@@ -1025,6 +1060,7 @@ bool Debugger::SleepUntilResume(BreakSource source, uint32_t breakpointId, Break
 		_executionStopped = false;
 		return true;
 	}
+	#endif
 	return false;
 }
 
@@ -1119,15 +1155,16 @@ void Debugger::ResetStepState()
 	_stepOut = false;
 }
 
+// checks if any step operation is in progress, and updates _stepRoot accordingly.
 void Debugger::CalculateStepRoot()
 {
 	if (_stepCount >= 0 || _stepCycleCount >= 0 || _stepOut || _stepOverAddr != -1)
 	{
-		_stepRoot = false;
+		_stepRoot = true;
 	}
 	else
 	{
-		_stepRoot = true;
+		_stepRoot = false;
 	}
 }
 

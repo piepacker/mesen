@@ -96,11 +96,16 @@ void ScriptingContext::RegisterMemoryCallback(CallbackType type, int startAddr, 
 	}
 
 	if(startAddr == 0 && endAddr == 0) {
-		if(type <= CallbackType::CpuExec) {
-			endAddr = 0xFFFF;
-		} else {
-			endAddr = 0x3FFF;
-		}
+		endAddr = 0xFFFF;
+	}
+	
+	if (type <= CallbackType::CpuExec)
+	{
+		endAddr = std::min(0xFFFF, endAddr);
+	}
+	else
+	{
+		endAddr = std::min(0x3FFF, endAddr);
 	}
 
 	for(int i = startAddr; i <= endAddr; i++) {
