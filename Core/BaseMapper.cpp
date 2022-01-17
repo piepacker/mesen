@@ -794,6 +794,7 @@ void BaseMapper::WriteRAM(uint16_t addr, uint8_t value)
 
 void BaseMapper::DebugWriteRAM(uint16_t addr, uint8_t value)
 {
+	#ifndef LIBRETRO
 	if(_isWriteRegisterAddr[addr]) {
 		if(_hasBusConflicts) {
 			value &= _prgPages[addr >> 8][(uint8_t)addr];
@@ -801,6 +802,11 @@ void BaseMapper::DebugWriteRAM(uint16_t addr, uint8_t value)
 	} else {
 		WritePrgRam(addr, value);
 	}
+	#else
+	if (_prgPages[addr >> 8]) {
+		_prgPages[addr >> 8][(uint8_t)addr] = value;
+	}
+	#endif
 }
 
 void BaseMapper::WritePrgRam(uint16_t addr, uint8_t value)
