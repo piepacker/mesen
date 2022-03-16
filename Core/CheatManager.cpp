@@ -103,16 +103,71 @@ void CheatManager::AddCode(CodeInfo &code)
 	_console->GetNotificationManager()->SendNotification(ConsoleNotificationType::CheatAdded);
 }
 
+void CheatManager::DelCode(CodeInfo &code)
+{
+	bool cheatRemoved = false;
+	if(code.IsRelativeAddress) {
+		if(code.Address > 0xFFFF) {
+			//Invalid cheat, ignore it
+			return;
+		}
+		if(_relativeCheatCodes[code.Address] == nullptr) {
+			return;
+		}
+
+		const auto& a = _relativeCheatCodes[code.Address];
+		size_t prev_size = a->size();
+		a->erase(
+				remove_if(a->begin(), a->end(), [&](CodeInfo c) {
+					return c.Address == code.Address && c.Value == code.Value && c.CompareValue == code.CompareValue;
+					})
+				, a->end()
+				);
+
+		cheatRemoved = a->size() != prev_size;
+
+	} else {
+		size_t prev_size = _absoluteCheatCodes.size();
+
+		_absoluteCheatCodes.erase(
+				remove_if(_absoluteCheatCodes.begin(), _absoluteCheatCodes.end(), [&](CodeInfo c) {
+					return c.Address == code.Address && c.Value == code.Value && c.CompareValue == code.CompareValue;
+					})
+				, _absoluteCheatCodes.end()
+				);
+
+		cheatRemoved = _absoluteCheatCodes.size() != prev_size;
+	}
+
+	_hasCode = !_relativeCheatCodes.empty() || !_absoluteCheatCodes.empty();
+
+	if(cheatRemoved) {
+		_console->GetNotificationManager()->SendNotification(ConsoleNotificationType::CheatRemoved);
+	}
+}
+
 void CheatManager::AddGameGenieCode(string code)
 {
 	CodeInfo info = GetGGCodeInfo(code);
 	AddCode(info);
 }
 
+void CheatManager::DelGameGenieCode(string code)
+{
+	CodeInfo info = GetGGCodeInfo(code);
+	DelCode(info);
+}
+
 void CheatManager::AddProActionRockyCode(uint32_t code)
 {
 	CodeInfo info = GetPARCodeInfo(code);
 	AddCode(info);
+}
+
+void CheatManager::DelProActionRockyCode(uint32_t code)
+{
+	CodeInfo info = GetPARCodeInfo(code);
+	DelCode(info);
 }
 
 void CheatManager::AddCustomCode(uint32_t address, uint8_t value, int32_t compareValue, bool isRelativeAddress)
@@ -124,6 +179,17 @@ void CheatManager::AddCustomCode(uint32_t address, uint8_t value, int32_t compar
 	code.IsRelativeAddress = isRelativeAddress;
 
 	AddCode(code);
+}
+
+void CheatManager::DelCustomCode(uint32_t address, uint8_t value, int32_t compareValue, bool isRelativeAddress)
+{
+	CodeInfo code;
+	code.Address = address;
+	code.Value = value;
+	code.CompareValue = compareValue;
+	code.IsRelativeAddress = isRelativeAddress;
+
+	DelCode(code);
 }
 
 void CheatManager::ClearCodes()

@@ -44,13 +44,17 @@ private:
 	CodeInfo GetGGCodeInfo(string ggCode);
 	CodeInfo GetPARCodeInfo(uint32_t parCode);
 	void AddCode(CodeInfo &code);
-	
+	void DelCode(CodeInfo &code);
+
 public:
 	CheatManager(shared_ptr<Console> console);
 
 	void AddGameGenieCode(string code);
 	void AddProActionRockyCode(uint32_t code);
 	void AddCustomCode(uint32_t address, uint8_t value, int32_t compareValue = -1, bool isRelativeAddress = true);
+    void DelGameGenieCode(string code);
+	void DelProActionRockyCode(uint32_t code);
+	void DelCustomCode(uint32_t address, uint8_t value, int32_t compareValue = -1, bool isRelativeAddress = true);
 	void ClearCodes();
 
 	vector<CodeInfo> GetCheats();

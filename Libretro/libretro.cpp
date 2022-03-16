@@ -763,12 +763,18 @@ extern "C" {
 		if(code.size() == 7 && code[4] == ':') {
 			string address = code.substr(0, 4);
 			string value = code.substr(5, 2);
-			_console->GetCheatManager()->AddCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value));
+			if (enabled)
+				_console->GetCheatManager()->AddCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value));
+			else
+				_console->GetCheatManager()->DelCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value));
 		} else if(code.size() == 10 && code[4] == '?' && code[7] == ':') {
 			string address = code.substr(0, 4);
 			string comparison = code.substr(5, 2);
 			string value = code.substr(8, 2);
-			_console->GetCheatManager()->AddCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value), HexUtilities::FromHex(comparison));
+			if (enabled)
+				_console->GetCheatManager()->AddCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value), HexUtilities::FromHex(comparison));
+			else
+				_console->GetCheatManager()->DelCustomCode(HexUtilities::FromHex(address), HexUtilities::FromHex(value), HexUtilities::FromHex(comparison));
 		} else if(code.size() == 6 || code.size() == 8) {
 			//This is either a GG or PAR code
 			bool isValidGgCode = true;
@@ -783,9 +789,15 @@ extern "C" {
 			}
 
 			if(isValidGgCode) {
-				_console->GetCheatManager()->AddGameGenieCode(code);
+                if (enabled)
+                    _console->GetCheatManager()->AddGameGenieCode(code);
+                else
+                    _console->GetCheatManager()->DelGameGenieCode(code);
 			} else if(isValidParCode) {
-				_console->GetCheatManager()->AddProActionRockyCode(HexUtilities::FromHex(code));
+                if (enabled)
+                    _console->GetCheatManager()->AddProActionRockyCode(HexUtilities::FromHex(code));
+                else
+                    _console->GetCheatManager()->DelProActionRockyCode(HexUtilities::FromHex(code));
 			}
 		}
 
