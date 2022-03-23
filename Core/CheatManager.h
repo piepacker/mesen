@@ -26,7 +26,7 @@ struct CheatInfo
 	uint32_t Address;
 	char GameGenieCode[9];
 	uint8_t Value;
-	uint8_t CompareValue;
+	int16_t CompareValue;
 	bool UseCompareValue;
 	bool IsRelativeAddress;
 };
