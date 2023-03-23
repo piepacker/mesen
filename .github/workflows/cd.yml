@@ -48,7 +48,7 @@ jobs:
         with:
           submodules: true
 
-      - run: make -C Libretro -j 4 && strip -s Libretro/mesen_libretro.so
+      - run: make -C Libretro -j 4
 
       - name: ZIP Release
         uses: vimtor/action-zip@v1
@@ -79,7 +79,7 @@ jobs:
         with:
           submodules: true
 
-      - run: make -C Libretro -j 4 && strip -s Libretro/mesen_libretro.so
+      - run: make -C Libretro -j 4
 
       - name: ZIP Release
         uses: vimtor/action-zip@v1
