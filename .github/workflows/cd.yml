@@ -79,7 +79,7 @@ jobs:
         with:
           submodules: true
 
-      - run: make -C Libretro -j 4
+      - run: CC=gcc make platform=win -C Libretro -j 4
 
       - name: ZIP Release
         uses: vimtor/action-zip@v1
