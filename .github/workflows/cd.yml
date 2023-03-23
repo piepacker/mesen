@@ -10,7 +10,7 @@ defaults:
 
 jobs:
   build_linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
       - uses: actions/checkout@v2
@@ -39,5 +39,67 @@ jobs:
           upload_url: ${{ steps.get_release.outputs.upload_url }}
           asset_path: mesen_libretro.so.zip
           asset_name: mesen-Linux-x86_64.zip
+          asset_content_type: application/zip
+
+  build_osx:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - run: make -C Libretro -j 4 && strip -s Libretro/mesen_libretro.so
+
+      - name: ZIP Release
+        uses: vimtor/action-zip@v1
+        with:
+          files: mesen_libretro.dylib
+          dest: mesen_libretro.dylib.zip
+
+      - name: Get release
+        id: get_release
+        uses: bruceadams/get-release@v1.2.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
+          asset_path: mesen_libretro.dylib.zip
+          asset_name: mesen-OSX-x86_64.zip
+          asset_content_type: application/zip
+
+  build_windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - run: make -C Libretro -j 4 && strip -s Libretro/mesen_libretro.so
+
+      - name: ZIP Release
+        uses: vimtor/action-zip@v1
+        with:
+          files: mesen_libretro.dll
+          dest: mesen_libretro.dll.zip
+
+      - name: Get release
+        id: get_release
+        uses: bruceadams/get-release@v1.2.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
+          asset_path: mesen_libretro.dll.zip
+          asset_name: mesen-Windows-x86_64.zip
           asset_content_type: application/zip
 
